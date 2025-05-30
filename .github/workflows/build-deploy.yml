@@ -1,0 +1,88 @@
+name: Build, Test and Package for Ubuntu
+
+on:
+  push:
+    branches: [ "main" ]
+
+env:
+  VERSION: "1.0"
+
+jobs:
+  build:
+    name: Build and Package
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup dependencies
+      run: |
+        sudo apt update && sudo apt install -y cmake g++ libgtest-dev ruby-full build-essential
+        sudo gem install fpm
+
+    - name: Configure with CMake
+      run: |
+        mkdir -p build
+        cd build
+        cmake ..
+
+    - name: Build project
+      run: |
+        cd build
+        make
+
+    - name: Run tests
+      run: |
+        cd build
+        ctest --output-on-failure
+
+    - name: Prepare packaging directories
+      run: |
+        mkdir -p pkg packaging/usr/local/bin
+        cp build/main packaging/usr/local/bin/
+
+    - name: Build .deb package
+      run: |
+        cd packaging
+        fpm -s dir -t deb \
+            -n decorator-example \
+            -v ${{ env.VERSION }} \
+            -a amd64 \
+            -m "Your Name <your@email.com>" \
+            --description "Decorator Pattern Example in C++" \
+            -C usr/local/bin \
+            --package ../pkg/decorator-example_#{@version}_amd64.deb \
+            .
+
+    - name: Upload DEB package as Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: decorator-release-artifacts
+        path: pkg/*.deb
+
+  deploy:
+    name: Create Release and Upload Assets
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+    - name: Download Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: decorator-release-artifacts
+        path: pkg
+
+    - name: Create GitHub Release with all assets
+      uses: ncipollo/release-action@v1
+      with:
+        name: Decorator Pattern v${{ env.VERSION }}
+        tag: v${{ env.VERSION }}
+        body: Auto-generated release with Decorator pattern example
+        draft: false
+        prerelease: false
+        artifact: pkg/
+        allowUpdates: true
+        token: ${{ secrets.GITHUB_TOKEN }}
